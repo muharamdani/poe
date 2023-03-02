@@ -1,0 +1,32 @@
+{
+  "name": "poe-node",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "compile": "tsc",
+    "start": "npm run compile && node ./dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@apollo/client": "^3.7.9",
+    "@apollo/server": "^4.4.0",
+    "chalk": "^5.2.0",
+    "cheerio": "^1.0.0-rc.12",
+    "cli-spinners": "^2.7.0",
+    "cross-fetch": "^3.1.5",
+    "fetch-cookie": "^2.1.0",
+    "graphql": "^16.6.0",
+    "graphql-tag": "^2.12.6",
+    "ora": "^6.1.2",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.14.2",
+    "typescript": "^4.9.5"
+  }
+}

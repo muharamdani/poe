@@ -1,0 +1,168 @@
+import { ApolloClient, InMemoryCache, gql } from "@apollo/client/core/core.cjs";
+import { HttpLink } from "@apollo/client/link/http/http.cjs";
+import makeSession from "fetch-cookie";
+import fetch from "cross-fetch";
+import prompts from "prompts";
+import ora from "ora";
+import { readFileSync } from "fs";
+const spinner = ora({
+    color: "cyan",
+});
+const gqlDir = process.cwd() + "/graphql";
+const queries = {
+    chatViewQuery: readFileSync(gqlDir + "/ChatViewQuery.graphql", "utf8"),
+    addMessageBreakMutation: readFileSync(gqlDir + "/AddMessageBreakMutation.graphql", "utf8"),
+    chatPaginationQuery: readFileSync(gqlDir + "/ChatPaginationQuery.graphql", "utf8"),
+    addHumanMessageMutation: readFileSync(gqlDir + "/AddHumanMessageMutation.graphql", "utf8"),
+};
+class ChatBot {
+    constructor() {
+        this.baseURL = "https://www.quora.com";
+        this.session = makeSession(fetch);
+        this.client = new ApolloClient({
+            link: new HttpLink({
+                fetch: this.session,
+                uri: `${this.baseURL}/poe_api/gql_POST`,
+                headers: {
+                    "Host": "www.quora.com",
+                    "Accept": "*/*",
+                    "apollographql-client-version": "1.1.6-65",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "User-Agent": "Poe 1.1.6 rv:65 env:prod (iPhone14,2; iOS 16.2; en_US)",
+                    "apollographql-client-name": "com.quora.app.Experts-apollo-ios",
+                    "Connection": "keep-alive",
+                    "Content-Type": "application/json",
+                    "Quora-Formkey": "fil this",
+                    "Cookie": "fill this"
+                },
+            }),
+            cache: new InMemoryCache(),
+            defaultOptions: {
+                watchQuery: {
+                    fetchPolicy: "no-cache",
+                    errorPolicy: "ignore",
+                },
+                query: {
+                    fetchPolicy: "no-cache",
+                    errorPolicy: "all",
+                },
+            }
+        });
+        this.chatId = 0;
+        this.bot = "";
+    }
+    async start() {
+        const { bot } = await prompts({
+            type: "select",
+            name: "bot",
+            message: "Select",
+            choices: [
+                { title: "Claude - a2", value: "a2" },
+                { title: "Capybara (logical)", value: "capybara" },
+                { title: "Nutria (simpler)", value: "nutria" },
+            ],
+        });
+        await this.getChatId(bot);
+        let helpMsg = "Available commands: !help !exit, !clear, !submit" +
+            "\n!help - show this message" +
+            "\n!exit - exit the chat" +
+            "\n!clear - clear chat history" +
+            "\n!submit - submit prompt";
+        console.log(helpMsg);
+        let submitedPrompt = "";
+        while (true) {
+            const { prompt } = await prompts({
+                type: "text",
+                name: "prompt",
+                message: "Ask:",
+            });
+            if (prompt.length > 0) {
+                if (prompt === "!help") {
+                    console.log(helpMsg);
+                }
+                else if (prompt === "!exit") {
+                    break;
+                }
+                else if (prompt === "!clear") {
+                    spinner.start("Clearing chat history...");
+                    await this.clearContext();
+                    submitedPrompt = "";
+                    spinner.stop();
+                    console.log("Chat history cleared");
+                }
+                else if (prompt === "!submit") {
+                    if (submitedPrompt.length === 0) {
+                        console.log("No prompt to submit");
+                        continue;
+                    }
+                    spinner.start("Waiting for response...");
+                    await this.sendMsg(submitedPrompt);
+                    let response = await this.getResponse();
+                    spinner.stop();
+                    submitedPrompt = "";
+                    console.log(response);
+                }
+                else {
+                    submitedPrompt += prompt + "\n";
+                }
+            }
+        }
+    }
+    async getChatId(bot) {
+        const { data: { chatOfBot: { chatId } } } = await this.client.query({
+            query: gql `${queries.chatViewQuery}`,
+            variables: {
+                bot,
+            },
+        });
+        this.chatId = chatId;
+        this.bot = bot;
+    }
+    async clearContext() {
+        await this.client.mutate({
+            mutation: gql `${queries.addMessageBreakMutation}`,
+            variables: { chatId: this.chatId },
+        });
+    }
+    async sendMsg(query) {
+        await this.client.mutate({
+            mutation: gql `${queries.addHumanMessageMutation}`,
+            variables: {
+                bot: this.bot,
+                chatId: this.chatId,
+                query: query,
+                source: null,
+                withChatBreak: false
+            },
+        });
+    }
+    async getResponse() {
+        let text;
+        let state;
+        let authorNickname;
+        while (true) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            let response = await this.client.query({
+                query: gql `${queries.chatPaginationQuery}`,
+                variables: {
+                    before: null,
+                    bot: this.bot,
+                    last: 1,
+                },
+            });
+            let base = response.data.chatOfBot.messagesConnection.edges;
+            let lastEdgeIndex = base.length - 1;
+            text = base[lastEdgeIndex].node.text;
+            authorNickname = base[lastEdgeIndex].node.authorNickname;
+            state = base[lastEdgeIndex].node.state;
+            if (state === "complete" && authorNickname === this.bot) {
+                break;
+            }
+        }
+        return text;
+    }
+}
+const chatBot = new ChatBot();
+await chatBot.start();
+// later feature to automatically get credentials
+// await chatBot.getCredentials();
