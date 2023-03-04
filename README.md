@@ -1,6 +1,6 @@
 # Quora Poe
 This is a CLI tool to call the Quora Poe API through GraphQL. It is a work in progress, and currently only supports the following:
-- Chat with 3 types of bots (Claude, Capybara, and Nutria)
+- Chat with 4 types of bots (Sage, Claude, ChatGPT, and Dragonfly)
 - Clear the chat history
 
 ## Installation
@@ -42,7 +42,5 @@ Note: Next plan is to semi automate this things
 - prompts
 
 ## Contributing
-Since I do not own apple devices, I am unable to reverse engineer the app to find the endpoints/requests made by the app.
-If you are able to do so, please contribute to this repo by adding new features or fixing bugs.
 
 To contribute to this repo, fork first and create a pull request.
