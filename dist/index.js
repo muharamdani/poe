@@ -4,7 +4,9 @@ import makeSession from "fetch-cookie";
 import fetch from "cross-fetch";
 import prompts from "prompts";
 import ora from "ora";
+import * as dotenv from "dotenv";
 import { readFileSync } from "fs";
+dotenv.config();
 const spinner = ora({
     color: "cyan",
 });
@@ -32,8 +34,8 @@ class ChatBot {
                     "apollographql-client-name": "com.quora.app.Experts-apollo-ios",
                     "Connection": "keep-alive",
                     "Content-Type": "application/json",
-                    "Quora-Formkey": "fil this",
-                    "Cookie": "fill this"
+                    "Quora-Formkey": process.env.QUORA_FORMKEY || "",
+                    "Cookie": process.env.MB_COOKIE || "",
                 },
             }),
             cache: new InMemoryCache(),
@@ -60,8 +62,12 @@ class ChatBot {
                 { title: "Claude - a2", value: "a2" },
                 { title: "Capybara (logical)", value: "capybara" },
                 { title: "Nutria (simpler)", value: "nutria" },
+                { title: "exit", value: "exit" }
             ],
         });
+        if (bot === "exit") {
+            return;
+        }
         await this.getChatId(bot);
         let helpMsg = "Available commands: !help !exit, !clear, !submit" +
             "\n!help - show this message" +
