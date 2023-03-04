@@ -64,9 +64,10 @@ class ChatBot {
             name: "bot",
             message: "Select",
             choices: [
-                {title: "Claude - a2", value: "a2"},
-                {title: "Capybara (logical)", value: "capybara"},
-                {title: "Nutria (simpler)", value: "nutria"},
+                {title: "Claude (Powered by Anthropic)", value: "a2"},
+                {title: "Sage (Powered by OpenAI - logical)", value: "capybara"},
+                {title: "Dragonfly (Powered by OpenAI - simpler)", value: "nutria"},
+                {title: "ChatGPT (Powered by OpenAI - current)", value: "chinchilla"},
                 {title: "exit", value: "exit"}
             ],
         });
@@ -182,6 +183,3 @@ class ChatBot {
 
 const chatBot = new ChatBot();
 await chatBot.start();
-
-// later feature to automatically get credentials
-// await chatBot.getCredentials();
