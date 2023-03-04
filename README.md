@@ -1,10 +1,11 @@
 # Quora Poe
-
-- Since it 
+This is a CLI tool to call the Quora Poe API through GraphQL. It is a work in progress, and currently only supports the following:
+- Chat with 3 types of bots (Claude, Capybara, and Nutria)
+- Clear the chat history
 
 ## Installation
-
-To install this app, run:
+- Copy the .env.example file to .env and fill in the required fields
+- Run the following command to install the dependencies:
 
 ```
 npm install
@@ -20,9 +21,11 @@ npm start
 
 ## Requirements
 
-To use this API, you will need to have the following cookies:
-- Quora-Formkey: This is obtained by logging in to Quora.com, viewing the page source, and finding the "formkey" dictionary key. Use its value in the Quora-Formkey field.
+To use this API, you will need to have the following:
+- Quora-Formkey: This is obtained by logging in to Quora.com, viewing the page source, and finding the "formkey" dictionary key.
 - Cookie: 'm-b=xxxx' - This is the value of the cookie with the key m-b, which is present in the list of cookies used on Quora.com, you can simply inspect cookies in Chrome to get it.
+- Put the above two in a .env file in the root directory of the project
+
 Note: Next plan is to semi automate this things
 
 ## Dependencies
@@ -39,5 +42,7 @@ Note: Next plan is to semi automate this things
 - prompts
 
 ## Contributing
+Since I do not own apple devices, I am unable to reverse engineer the app to find the endpoints/requests made by the app.
+If you are able to do so, please contribute to this repo by adding new features or fixing bugs.
 
 To contribute to this repo, fork first and create a pull request.
