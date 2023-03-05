@@ -23,6 +23,7 @@
     "fetch-cookie": "^2.1.0",
     "graphql": "^16.6.0",
     "graphql-tag": "^2.12.6",
+    "jsdom": "^21.1.0",
     "ora": "^6.1.2",
     "prompts": "^2.4.2"
   },
