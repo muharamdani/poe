@@ -1,7 +1,3 @@
-import { ApolloClient, InMemoryCache, gql } from "@apollo/client/core/core.cjs";
-import { HttpLink } from "@apollo/client/link/http/http.cjs";
-import makeSession from "fetch-cookie";
-import { CookieJar } from "tough-cookie";
 import fetch from "cross-fetch";
 import prompts from "prompts";
 import ora from "ora";
@@ -9,6 +5,7 @@ import * as dotenv from "dotenv";
 import { readFileSync, writeFile } from "fs";
 import axios from 'axios';
 import { JSDOM } from 'jsdom';
+import scrape from "./puppet.js";
 dotenv.config();
 const spinner = ora({
     color: "cyan",
@@ -22,83 +19,63 @@ const queries = {
     loginMutation: readFileSync(gqlDir + "/LoginWithVerificationCodeMutation.graphql", "utf8"),
     sendVerificationCodeMutation: readFileSync(gqlDir + "/SendVerificationCodeForLoginMutation.graphql", "utf8"),
 };
-let baseURL = "www.quora.com/poe_api";
-const jar = new CookieJar();
-let session = makeSession(fetch, jar);
-const response = await session(`https://${baseURL}/settings`, {
-    method: "GET",
-});
-let { formkey } = await response.json();
-let cookies = jar.getCookiesSync(`https://${baseURL}/settings`);
-let cookie = "m-b=";
-for (let i = 0; i < cookies.length; i++) {
-    if (cookies[i].key === "m-b") {
-        cookie += cookies[i].value;
-    }
-}
+let [pbCookie, channelName, appSettings, formkey] = ["", "", "", ""];
 class ChatBot {
     constructor() {
+        this.headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'PostmanRuntime/7.31.1',
+            'Accept': '*/*',
+            'Host': 'poe.com',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+        };
         this.chatId = 0;
         this.bot = "";
     }
-    async createClient(mode) {
-        let headers = {
-            "Host": "www.quora.com",
-            "Accept": "*/*",
-            "apollographql-client-version": "1.1.6-65",
-            "Accept-Language": "en-US,en;q=0.9",
-            "User-Agent": "Poe 1.1.6 rv:65 env:prod (iPhone14,2; iOS 16.2; en_US)",
-            "apollographql-client-name": "com.quora.app.Experts-apollo-ios",
-            "Connection": "keep-alive",
-            "Content-Type": "application/json",
-        };
+    async setMode(mode) {
         if (mode !== "manual") {
             const isFormkeyAvailable = await this.getCredentials();
             if (!isFormkeyAvailable) {
                 await this.setCredentials();
             }
         }
-        if (mode === "auto" || mode === "semi") {
-            headers["Quora-Formkey"] = formkey;
-            headers["Cookie"] = cookie;
-        }
         else {
-            headers["Quora-Formkey"] = process.env.QUORA_FORMKEY || "";
-            headers["Cookie"] = process.env.MB_COOKIE || "";
+            this.headers["poe-formkey"] = process.env.QUORA_FORMKEY || "";
+            this.headers["Cookie"] = process.env.PB_COOKIE || "";
         }
-        console.log("Headers: " + JSON.stringify(headers));
-        this.client = new ApolloClient({
-            link: new HttpLink({
-                fetch: session,
-                uri: `https://${baseURL}/gql_POST`,
-                headers: headers,
-            }),
-            cache: new InMemoryCache(),
-            defaultOptions: {
-                watchQuery: {
-                    fetchPolicy: "no-cache",
-                    errorPolicy: "ignore",
-                },
-                query: {
-                    fetchPolicy: "no-cache",
-                    errorPolicy: "all",
-                },
-            }
-        });
     }
     async getCredentials() {
         const credentials = JSON.parse(readFileSync("config.json", "utf8"));
         const { quora_formkey, quora_cookie } = credentials;
         if (quora_formkey.length > 0 && quora_cookie.length > 0) {
             formkey = quora_formkey;
-            cookie = quora_cookie;
+            pbCookie = `p-b=${quora_cookie}`;
+            // For websocket later feature
+            channelName = credentials.channel_name;
+            appSettings = credentials.app_settings;
+            this.headers["poe-formkey"] = formkey;
+            this.headers["Cookie"] = pbCookie;
         }
         return quora_formkey.length > 0 && quora_cookie.length > 0;
     }
     async setCredentials() {
+        let result = await scrape();
         const credentials = JSON.parse(readFileSync("config.json", "utf8"));
-        credentials.quora_formkey = formkey;
-        credentials.quora_cookie = cookie;
+        credentials.quora_formkey = result.appSettings.formkey;
+        ;
+        credentials.quora_cookie = result.pbCookie;
+        // For websocket later feature
+        credentials.channel_name = result.channelName;
+        credentials.app_settings = result.appSettings;
+        // set value
+        formkey = result.appSettings.formkey;
+        pbCookie = result.pbCookie;
+        // For websocket later feature
+        channelName = result.channelName;
+        appSettings = result.appSettings;
+        this.headers["poe-formkey"] = formkey;
+        this.headers["Cookie"] = `p-b=${pbCookie}`;
         writeFile("config.json", JSON.stringify(credentials), function (err) {
             if (err) {
                 console.log(err);
@@ -106,22 +83,25 @@ class ChatBot {
         });
     }
     async start() {
-        const { mode } = await prompts({
-            type: "select",
-            name: "mode",
-            message: "Select",
-            choices: [
-                { title: "Auto [This will use temp phone number to get Verification Code]", value: "auto" },
-                { title: "Semi-Auto [Use you own email/phone number]", value: "semi" },
-                { title: "Manual [Input QUORA_FORMKEY and MB_COOKIE in .env manually]", value: "manual" },
-                { title: "exit", value: "exit" }
-            ],
-        });
-        if (mode === "exit") {
-            return;
+        const isFormkeyAvailable = await this.getCredentials();
+        if (!isFormkeyAvailable) {
+            const { mode } = await prompts({
+                type: "select",
+                name: "mode",
+                message: "Select",
+                choices: [
+                    { title: "Auto [This will use temp phone number to get Verification Code]", value: "auto" },
+                    { title: "Semi-Auto [Use you own email/phone number]", value: "semi" },
+                    { title: "Manual [Input QUORA_FORMKEY and PB_COOKIE in .env manually]", value: "manual" },
+                    { title: "exit", value: "exit" }
+                ],
+            });
+            if (mode === "exit") {
+                return;
+            }
+            await this.setMode(mode);
+            await this.login(mode);
         }
-        await this.createClient(mode);
-        await this.login(mode);
         const { bot } = await prompts({
             type: "select",
             name: "bot",
@@ -178,6 +158,16 @@ class ChatBot {
                 }
             }
         }
+    }
+    async makeRequest(request) {
+        this.headers["Content-Length"] = Buffer.byteLength(JSON.stringify(request), 'utf8');
+        console.log("THIS HEADERS: ", this.headers);
+        const response = await fetch('https://poe.com/api/gql_POST', {
+            method: 'POST',
+            headers: this.headers,
+            body: JSON.stringify(request)
+        });
+        return await response.json();
     }
     async login(mode) {
         if (mode === "auto") {
@@ -257,8 +247,8 @@ class ChatBot {
         console.log("Phone number: " + phoneNumber);
         console.log("Email: " + email);
         console.log("Verification code: " + verifyCode);
-        const { data: { loginWithVerificationCode: { status: loginStatus }, }, } = await this.client.mutate({
-            mutation: gql `${queries.loginMutation}`,
+        const { data: { loginWithVerificationCode: { status: loginStatus }, }, } = await this.makeRequest({
+            query: `${queries.loginMutation}`,
             variables: {
                 verificationCode: verifyCode,
                 emailAddress: email,
@@ -269,14 +259,15 @@ class ChatBot {
         return loginStatus;
     }
     async sendVerifCode(phoneNumber, email) {
-        const { data: { sendVerificationCode: { status: codeSendStatus }, }, } = await this.client.mutate({
-            mutation: gql `${queries.sendVerificationCodeMutation}`,
+        const data = await this.makeRequest({
+            query: `${queries.sendVerificationCodeMutation}`,
             variables: {
                 emailAddress: email,
                 phoneNumber: phoneNumber
             },
         });
-        console.log("Send Status: " + codeSendStatus);
+        console.log("DATA: " + JSON.stringify(data));
+        // console.log("Send Status: " + codeSendStatus)
     }
     async getPhoneNumber() {
         const freeSmsBaseUrl = 'https://www.receivesms.co';
@@ -319,42 +310,61 @@ class ChatBot {
         console.log("Verification code: " + latestCode);
         return latestCode;
     }
+    // Safe
     async getChatId(bot) {
-        const { data: { chatOfBot: { chatId } } } = await this.client.query({
-            query: gql `${queries.chatViewQuery}`,
-            variables: {
-                bot,
-            },
-        });
-        this.chatId = chatId;
-        this.bot = bot;
+        try {
+            const { data: { chatOfBot: { chatId } } } = await this.makeRequest({
+                query: `${queries.chatViewQuery}`,
+                variables: {
+                    bot,
+                },
+            });
+            this.chatId = chatId;
+            this.bot = bot;
+        }
+        catch (e) {
+            throw new Error("Could not get chat id, invalid formkey or cookie");
+        }
     }
+    // Safe
     async clearContext() {
-        await this.client.mutate({
-            mutation: gql `${queries.addMessageBreakMutation}`,
-            variables: { chatId: this.chatId },
-        });
+        try {
+            await this.makeRequest({
+                query: `${queries.addMessageBreakMutation}`,
+                variables: { chatId: this.chatId },
+            });
+        }
+        catch (e) {
+            throw new Error("Could not clear context");
+        }
     }
+    // Safe
     async sendMsg(query) {
-        await this.client.mutate({
-            mutation: gql `${queries.addHumanMessageMutation}`,
-            variables: {
-                bot: this.bot,
-                chatId: this.chatId,
-                query: query,
-                source: null,
-                withChatBreak: false
-            },
-        });
+        try {
+            await this.makeRequest({
+                query: `${queries.addHumanMessageMutation}`,
+                variables: {
+                    bot: this.bot,
+                    chatId: this.chatId,
+                    query: query,
+                    source: null,
+                    withChatBreak: false
+                },
+            });
+        }
+        catch (e) {
+            throw new Error("Could not send message");
+        }
     }
+    // Safe
     async getResponse() {
         let text;
         let state;
         let authorNickname;
         while (true) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            let response = await this.client.query({
-                query: gql `${queries.chatPaginationQuery}`,
+            let response = await this.makeRequest({
+                query: `${queries.chatPaginationQuery}`,
                 variables: {
                     before: null,
                     bot: this.bot,
