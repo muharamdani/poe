@@ -3,9 +3,7 @@ import prompts from "prompts";
 import ora from "ora";
 import * as dotenv from "dotenv";
 import {readFileSync, writeFile} from "fs";
-import axios from 'axios';
-import { JSDOM } from 'jsdom';
-import scrape from "./puppet.js";
+import scrape from "./credential.js";
 import * as mail from "./mail.js";
 
 dotenv.config();
@@ -38,28 +36,18 @@ class ChatBot {
         'Connection': 'keep-alive',
     }
 
-    public async setMode(mode) {
-        if (mode !== "manual") {
-            const isFormkeyAvailable = await this.getCredentials();
-            if (!isFormkeyAvailable) {
-                await this.setCredentials()
-            }
-        } else {
-            this.headers["poe-formkey"] = process.env.FORMKEY || "";
-            this.headers["Quora-Formkey"] = process.env.FORMKEY || "";
-            this.headers["Cookie"] = process.env.COOKIE || "";
-        }
-    }
-
     private chatId: number = 0;
     private bot: string = "";
 
     private async getCredentials() {
         const credentials = JSON.parse(readFileSync("config.json", "utf8"));
         const {quora_formkey, quora_cookie} = credentials;
+        console.log("FROM GET CREDENTIALS")
+        console.log(quora_formkey)
+        console.log(quora_cookie)
         if (quora_formkey.length > 0 && quora_cookie.length > 0) {
             formkey = quora_formkey;
-            pbCookie = `p-b=${quora_cookie}`;
+            pbCookie = quora_cookie;
             // For websocket later feature
             channelName = credentials.channel_name;
             appSettings = credentials.app_settings;
@@ -72,7 +60,7 @@ class ChatBot {
     private async setCredentials() {
         let result = await scrape();
         const credentials = JSON.parse(readFileSync("config.json", "utf8"));
-        credentials.quora_formkey = result.appSettings.formkey;;
+        credentials.quora_formkey = result.appSettings.formkey;
         credentials.quora_cookie = result.pbCookie;
         // For websocket later feature
         credentials.channel_name = result.channelName;
@@ -81,12 +69,15 @@ class ChatBot {
         // set value
         formkey = result.appSettings.formkey;
         pbCookie = result.pbCookie;
+        console.log("FROM SET CREDENTIALS")
+        console.log(formkey)
+        console.log(pbCookie)
         // For websocket later feature
         channelName = result.channelName;
         appSettings = result.appSettings;
         this.headers["poe-formkey"] = formkey;
-        this.headers["Cookie"] = `p-b=${pbCookie}`
-        writeFile("config.json", JSON.stringify(credentials), function(err) {
+        this.headers["Cookie"] = pbCookie;
+        writeFile("config.json", JSON.stringify(credentials), function (err) {
             if (err) {
                 console.log(err);
             }
@@ -103,16 +94,14 @@ class ChatBot {
                 choices: [
                     {title: "Auto [This will use temp email to get Verification Code]", value: "auto"},
                     {title: "Semi-Auto [Use you own email/phone number]", value: "semi"},
-                    {title: "Manual [Input FORMKEY and COOKIE in .env manually]", value: "manual"},
                     {title: "exit", value: "exit"}
                 ],
             });
 
             if (mode === "exit") {
-                return;
+                process.exit(0);
             }
-
-            await this.setMode(mode);
+            await this.setCredentials()
             await this.login(mode)
         }
 
@@ -200,8 +189,7 @@ class ChatBot {
             } else {
                 await this.signInOrUp(null, email, otp_code)
             }
-        }
-        else if (mode === "semi") {
+        } else {
             const {type} = await prompts({
                 type: "select",
                 name: "type",
@@ -214,7 +202,7 @@ class ChatBot {
             });
 
             if (type === "exit") {
-                return;
+                process.exit(0);
             }
 
             const {credentials} = await prompts({
@@ -253,8 +241,6 @@ class ChatBot {
                 }
             }
             spinner.stop();
-        } else {
-            console.log("Manual mode selected");
         }
     }
 
@@ -266,7 +252,7 @@ class ChatBot {
         try {
             const {
                 data: {
-                    loginWithVerificationCode: { status: loginStatus },
+                    loginWithVerificationCode: {status: loginStatus},
                 },
             } = await this.makeRequest({
                 query: `${queries.loginMutation}`,
@@ -291,7 +277,7 @@ class ChatBot {
         try {
             const {
                 data: {
-                    signupWithVerificationCode: { status: loginStatus },
+                    signupWithVerificationCode: {status: loginStatus},
                 },
             } = await this.makeRequest({
                 query: `${queries.signUpWithVerificationCodeMutation}`,
@@ -311,7 +297,7 @@ class ChatBot {
     private async sendVerifCode(phoneNumber, email) {
         try {
             // status error case: success, user_with_confirmed_phone_number_not_found, user_with_confirmed_email_not_found
-            const { data: { sendVerificationCode: { status } } } = await this.makeRequest({
+            const {data: {sendVerificationCode: {status}}} = await this.makeRequest({
                 query: `${queries.sendVerificationCodeMutation}`,
                 variables: {
                     emailAddress: email,
@@ -325,74 +311,10 @@ class ChatBot {
         }
     }
 
-    // DEPRECATED
-    public async getPhoneNumber() {
-        const freeSmsBaseUrl = 'https://www.receivesms.co';
-        const url = freeSmsBaseUrl + '/active-numbers/';
-        let smsCodeUrl = '';
-        let phoneNumber = '';
-        let code = '';
-        try {
-            const response = await axios.get(url);
-            const dom = new JSDOM(response.data);
-
-            const buttons = dom.window.document.querySelectorAll('a.btn');
-            const phoneNumbers = [];
-            buttons.forEach(button => {
-                const phoneNumber = button.getAttribute('data-clipboard-text');
-                phoneNumbers.push(phoneNumber);
-            });
-
-            const codes = dom.window.document.querySelectorAll('td a[target="_self"]')
-            const phoneCodes = [];
-            codes.forEach(code => {
-                const codeText = code.getAttribute('href');
-                phoneCodes.push(codeText);
-            });
-            const position = Math.floor(Math.random() * phoneNumbers.length);
-            phoneNumber = phoneNumbers[position];
-            code = phoneCodes[position];
-            smsCodeUrl = freeSmsBaseUrl + code;
-        } catch (error) {
-            console.log(error);
-        }
-
-        console.log("Your phone number: " + phoneNumber);
-        console.log("Your SMS code URL: " + smsCodeUrl);
-
-        return {phoneNumber, smsCodeUrl};
-    }
-
-    // DEPRECATED
-    private async getOTP(smsCodeUrl: string) {
-        let latestCode = [];
-        try {
-            const res = await fetch(smsCodeUrl);
-            const html = await res.text();
-            const dom = new JSDOM(html);
-            const elements = dom.window.document.querySelectorAll(".col-xs-12.col-md-8");
-            elements.forEach((element) => {
-                const text = element.textContent;
-                if (text && text.includes("Your Poe verification code is:")) {
-                    const code = element.querySelector(".btn1")?.getAttribute("data-clipboard-text");
-                    if (code) {
-                        latestCode.push(code);
-                    }
-                    return;
-                }
-            });
-        } catch (error) {
-            console.log("Error:", error);
-        }
-
-        return latestCode;
-    }
-
-    // Safe
     private async getChatId(bot: string) {
         try {
-            const {data: {chatOfBot: {chatId}}}= await this.makeRequest({
-                query:  `${queries.chatViewQuery}`,
+            const {data: {chatOfBot: {chatId}}} = await this.makeRequest({
+                query: `${queries.chatViewQuery}`,
                 variables: {
                     bot,
                 },
@@ -400,11 +322,10 @@ class ChatBot {
             this.chatId = chatId;
             this.bot = bot;
         } catch (e) {
-            throw new Error("Could not get chat id, invalid formkey or cookie");
+            throw new Error("Could not get chat id, invalid formkey or cookie! Please remove the quora_formkey value from the config.json file and try again.");
         }
     }
 
-    // Safe
     private async clearContext() {
         try {
             await this.makeRequest({
@@ -416,7 +337,6 @@ class ChatBot {
         }
     }
 
-    // Safe
     private async sendMsg(query: string) {
         try {
             await this.makeRequest({
@@ -434,7 +354,6 @@ class ChatBot {
         }
     }
 
-    // Safe
     private async getResponse(): Promise<string> {
         let text: string
         let state: string
