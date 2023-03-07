@@ -1,10 +1,19 @@
 import fetch from "cross-fetch";
+import {readFileSync, writeFile} from "fs";
 
 const BASEURL = 'https://api.guerrillamail.com/ajax.php';
 
 const createNewEmail = async () => {
     const response = await fetch(`${BASEURL}?f=get_email_address`);
     const response_json = await response.json();
+    const credentials = JSON.parse(readFileSync("config.json", "utf8"));
+    credentials.email = response_json.email_addr;
+    credentials.sid_token = response_json.sid_token;
+    writeFile("config.json", JSON.stringify(credentials), function(err) {
+        if (err) {
+            console.log(err);
+        }
+    });
     return {
         email: response_json.email_addr,
         sid_token: response_json.sid_token,

@@ -33,6 +33,10 @@ To use this API, you will need to have the following:
 
 Note: Next plan is to add stream support, so you can get tha chat responses in real time.
 
+## TODO List
+- [ ] Add support for relogin after session expires
+- [ ] Add stream support
+
 ## Contributing
 
 To contribute to this repo, fork first and create a pull request.
