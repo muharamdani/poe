@@ -6,6 +6,7 @@ import { readFileSync, writeFile } from "fs";
 import axios from 'axios';
 import { JSDOM } from 'jsdom';
 import scrape from "./puppet.js";
+import * as mail from "./mail.js";
 dotenv.config();
 const spinner = ora({
     color: "cyan",
@@ -17,6 +18,7 @@ const queries = {
     chatPaginationQuery: readFileSync(gqlDir + "/ChatPaginationQuery.graphql", "utf8"),
     addHumanMessageMutation: readFileSync(gqlDir + "/AddHumanMessageMutation.graphql", "utf8"),
     loginMutation: readFileSync(gqlDir + "/LoginWithVerificationCodeMutation.graphql", "utf8"),
+    signUpWithVerificationCodeMutation: readFileSync(gqlDir + "/SignupWithVerificationCodeMutation.graphql", "utf8"),
     sendVerificationCodeMutation: readFileSync(gqlDir + "/SendVerificationCodeForLoginMutation.graphql", "utf8"),
 };
 let [pbCookie, channelName, appSettings, formkey] = ["", "", "", ""];
@@ -41,8 +43,9 @@ class ChatBot {
             }
         }
         else {
-            this.headers["poe-formkey"] = process.env.QUORA_FORMKEY || "";
-            this.headers["Cookie"] = process.env.PB_COOKIE || "";
+            this.headers["poe-formkey"] = process.env.FORMKEY || "";
+            this.headers["Quora-Formkey"] = process.env.FORMKEY || "";
+            this.headers["Cookie"] = process.env.COOKIE || "";
         }
     }
     async getCredentials() {
@@ -90,9 +93,9 @@ class ChatBot {
                 name: "mode",
                 message: "Select",
                 choices: [
-                    { title: "Auto [This will use temp phone number to get Verification Code]", value: "auto" },
+                    { title: "Auto [This will use temp email to get Verification Code]", value: "auto" },
                     { title: "Semi-Auto [Use you own email/phone number]", value: "semi" },
-                    { title: "Manual [Input QUORA_FORMKEY and PB_COOKIE in .env manually]", value: "manual" },
+                    { title: "Manual [Input FORMKEY and COOKIE in .env manually]", value: "manual" },
                     { title: "exit", value: "exit" }
                 ],
             });
@@ -161,7 +164,6 @@ class ChatBot {
     }
     async makeRequest(request) {
         this.headers["Content-Length"] = Buffer.byteLength(JSON.stringify(request), 'utf8');
-        console.log("THIS HEADERS: ", this.headers);
         const response = await fetch('https://poe.com/api/gql_POST', {
             method: 'POST',
             headers: this.headers,
@@ -171,30 +173,19 @@ class ChatBot {
     }
     async login(mode) {
         if (mode === "auto") {
-            const { phoneNumber, smsCodeUrl } = await this.getPhoneNumber();
-            console.log("Your phone number: " + phoneNumber);
-            console.log("Your SMS code URL: " + smsCodeUrl);
-            let smsCode = await this.getSMSCode(smsCodeUrl);
-            if (smsCode.length === 0) {
-                await this.sendVerifCode(phoneNumber, null);
-            }
-            while (smsCode.length === 0) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                smsCode = await this.getSMSCode(smsCodeUrl);
-            }
-            let loginStatus = "invalid_verification_code";
-            spinner.start("Waiting for SMS code...");
-            let retryCount = 0;
-            while (loginStatus === "invalid_verification_code") {
-                await new Promise(resolve => setTimeout(resolve, 60000));
-                smsCode = await this.getSMSCode(smsCodeUrl);
-                loginStatus = await this.signInOrUp(phoneNumber, null, smsCode[0]);
-                retryCount++;
-                if (retryCount == 2) {
-                    await this.sendVerifCode(phoneNumber, null);
-                }
-            }
+            const { email, sid_token } = await mail.createNewEmail();
+            console.log("EMAIL: " + email);
+            console.log("SID_TOKEN: " + sid_token);
+            const status = await this.sendVerifCode(null, email);
+            spinner.start("Waiting for OTP code...");
+            const otp_code = await mail.getPoeOTPCode(sid_token);
             spinner.stop();
+            if (status === 'user_with_confirmed_email_not_found') {
+                await this.signUpWithVerificationCode(null, email, otp_code);
+            }
+            else {
+                await this.signInOrUp(null, email, otp_code);
+            }
         }
         else if (mode === "semi") {
             const { type } = await prompts({
@@ -215,11 +206,12 @@ class ChatBot {
                 name: "credentials",
                 message: "Enter your " + type + ":",
             });
+            let status = '';
             if (type === "email") {
-                await this.sendVerifCode(null, credentials);
+                status = await this.sendVerifCode(null, credentials);
             }
             else {
-                await this.sendVerifCode(credentials, null);
+                status = await this.sendVerifCode(credentials, null);
             }
             const { verifyCode } = await prompts({
                 type: "text",
@@ -230,10 +222,20 @@ class ChatBot {
             let loginStatus = "invalid_verification_code";
             while (loginStatus !== "success") {
                 if (type === "email") {
-                    loginStatus = await this.signInOrUp(null, credentials, verifyCode);
+                    if (status === 'user_with_confirmed_email_not_found') {
+                        loginStatus = await this.signUpWithVerificationCode(null, credentials, verifyCode);
+                    }
+                    else {
+                        loginStatus = await this.signInOrUp(null, credentials, verifyCode);
+                    }
                 }
                 else if (type === "phone") {
-                    loginStatus = await this.signInOrUp(credentials, null, verifyCode);
+                    if (status === 'user_with_confirmed_phone_number_not_found') {
+                        loginStatus = await this.signUpWithVerificationCode(credentials, null, verifyCode);
+                    }
+                    else {
+                        loginStatus = await this.signInOrUp(credentials, null, verifyCode);
+                    }
                 }
             }
             spinner.stop();
@@ -247,46 +249,96 @@ class ChatBot {
         console.log("Phone number: " + phoneNumber);
         console.log("Email: " + email);
         console.log("Verification code: " + verifyCode);
-        const { data: { loginWithVerificationCode: { status: loginStatus }, }, } = await this.makeRequest({
-            query: `${queries.loginMutation}`,
-            variables: {
-                verificationCode: verifyCode,
-                emailAddress: email,
-                phoneNumber: phoneNumber
-            },
-        });
-        console.log("Login Status: " + loginStatus);
-        return loginStatus;
+        try {
+            const { data: { loginWithVerificationCode: { status: loginStatus }, }, } = await this.makeRequest({
+                query: `${queries.loginMutation}`,
+                variables: {
+                    verificationCode: verifyCode,
+                    emailAddress: email,
+                    phoneNumber: phoneNumber
+                },
+            });
+            console.log("Login Status: " + loginStatus);
+            return loginStatus;
+        }
+        catch (e) {
+            throw e;
+        }
+    }
+    async signUpWithVerificationCode(phoneNumber, email, verifyCode) {
+        console.log("Signing in/up...");
+        console.log("Phone number: " + phoneNumber);
+        console.log("Email: " + email);
+        console.log("Verification code: " + verifyCode);
+        try {
+            const { data: { signupWithVerificationCode: { status: loginStatus }, }, } = await this.makeRequest({
+                query: `${queries.signUpWithVerificationCodeMutation}`,
+                variables: {
+                    verificationCode: verifyCode,
+                    emailAddress: email,
+                    phoneNumber: phoneNumber
+                },
+            });
+            console.log("Login Status: " + loginStatus);
+            return loginStatus;
+        }
+        catch (e) {
+            throw e;
+        }
     }
     async sendVerifCode(phoneNumber, email) {
-        const data = await this.makeRequest({
-            query: `${queries.sendVerificationCodeMutation}`,
-            variables: {
-                emailAddress: email,
-                phoneNumber: phoneNumber
-            },
-        });
-        console.log("DATA: " + JSON.stringify(data));
-        // console.log("Send Status: " + codeSendStatus)
+        try {
+            // status error case: success, user_with_confirmed_phone_number_not_found, user_with_confirmed_email_not_found
+            const { data: { sendVerificationCode: { status } } } = await this.makeRequest({
+                query: `${queries.sendVerificationCodeMutation}`,
+                variables: {
+                    emailAddress: email,
+                    phoneNumber: phoneNumber
+                },
+            });
+            console.log("Verification code sent. Status: " + status);
+            return status;
+        }
+        catch (e) {
+            throw e;
+        }
     }
+    // DEPRECATED
     async getPhoneNumber() {
         const freeSmsBaseUrl = 'https://www.receivesms.co';
-        const url = freeSmsBaseUrl + '/us-phone-numbers/us/';
+        const url = freeSmsBaseUrl + '/active-numbers/';
         let smsCodeUrl = '';
         let phoneNumber = '';
+        let code = '';
         try {
             const response = await axios.get(url);
             const dom = new JSDOM(response.data);
-            phoneNumber = dom.window.document.querySelector('a.btn').getAttribute('data-clipboard-text');
-            const code = dom.window.document.querySelector('td a[target="_self"]').getAttribute('href');
+            const buttons = dom.window.document.querySelectorAll('a.btn');
+            const phoneNumbers = [];
+            buttons.forEach(button => {
+                const phoneNumber = button.getAttribute('data-clipboard-text');
+                phoneNumbers.push(phoneNumber);
+            });
+            const codes = dom.window.document.querySelectorAll('td a[target="_self"]');
+            const phoneCodes = [];
+            codes.forEach(code => {
+                const codeText = code.getAttribute('href');
+                phoneCodes.push(codeText);
+            });
+            const position = Math.floor(Math.random() * phoneNumbers.length);
+            phoneNumber = phoneNumbers[position];
+            code = phoneCodes[position];
             smsCodeUrl = freeSmsBaseUrl + code;
         }
         catch (error) {
             console.log(error);
         }
+        console.log("Your phone number: " + phoneNumber);
+        console.log("Your SMS code URL: " + smsCodeUrl);
         return { phoneNumber, smsCodeUrl };
     }
-    async getSMSCode(smsCodeUrl) {
+    // DEPRECATED
+    async getOTP(smsCodeUrl) {
         let latestCode = [];
         try {
             const res = await fetch(smsCodeUrl);
@@ -307,7 +359,6 @@ class ChatBot {
         catch (error) {
             console.log("Error:", error);
         }
-        console.log("Verification code: " + latestCode);
         return latestCode;
     }
     // Safe
