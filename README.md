@@ -10,7 +10,6 @@ This is a CLI tool to call the Quora Poe API through GraphQL. It is a work in pr
 - NPM
 
 ## Installation
-- Copy the .env.example file to .env and fill in the required fields
 - Copy the config.example.json file to config.json
 - Run the following command to install the dependencies:
 
