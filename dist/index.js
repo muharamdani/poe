@@ -93,9 +93,9 @@ class ChatBot {
                 name: "mode",
                 message: "Select",
                 choices: [
-                    { title: "Auto [This will use temp phone number to get Verification Code]", value: "auto" },
+                    { title: "Auto [This will use temp email to get Verification Code]", value: "auto" },
                     { title: "Semi-Auto [Use you own email/phone number]", value: "semi" },
-                    { title: "Manual [Input QUORA_FORMKEY and PB_COOKIE in .env manually]", value: "manual" },
+                    { title: "Manual [Input FORMKEY and COOKIE in .env manually]", value: "manual" },
                     { title: "exit", value: "exit" }
                 ],
             });
