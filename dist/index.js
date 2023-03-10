@@ -3,7 +3,8 @@ import prompts from "prompts";
 import ora from "ora";
 import * as dotenv from "dotenv";
 import { readFileSync, writeFile } from "fs";
-import scrape from "./credential.js";
+import { scrape, getUpdatedSettings } from "./credential.js";
+import { listenWs, connectWs, disconnectWs } from "./websocket.js";
 import * as mail from "./mail.js";
 dotenv.config();
 const spinner = ora({
@@ -24,11 +25,11 @@ class ChatBot {
     constructor() {
         this.headers = {
             'Content-Type': 'application/json',
-            'User-Agent': 'PostmanRuntime/7.31.1',
             'Accept': '*/*',
             'Host': 'poe.com',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
+            'Origin': 'https://poe.com',
         };
         this.chatId = 0;
         this.bot = "";
@@ -36,9 +37,6 @@ class ChatBot {
     async getCredentials() {
         const credentials = JSON.parse(readFileSync("config.json", "utf8"));
         const { quora_formkey, quora_cookie } = credentials;
-        console.log("FROM GET CREDENTIALS");
-        console.log(quora_formkey);
-        console.log(quora_cookie);
         if (quora_formkey.length > 0 && quora_cookie.length > 0) {
             formkey = quora_formkey;
             pbCookie = quora_cookie;
@@ -46,6 +44,7 @@ class ChatBot {
             channelName = credentials.channel_name;
             appSettings = credentials.app_settings;
             this.headers["poe-formkey"] = formkey;
+            this.headers["poe-tchannel"] = channelName;
             this.headers["Cookie"] = pbCookie;
         }
         return quora_formkey.length > 0 && quora_cookie.length > 0;
@@ -61,19 +60,36 @@ class ChatBot {
         // set value
         formkey = result.appSettings.formkey;
         pbCookie = result.pbCookie;
-        console.log("FROM SET CREDENTIALS");
-        console.log(formkey);
-        console.log(pbCookie);
         // For websocket later feature
         channelName = result.channelName;
         appSettings = result.appSettings;
         this.headers["poe-formkey"] = formkey;
+        this.headers["poe-tchannel"] = channelName;
         this.headers["Cookie"] = pbCookie;
         writeFile("config.json", JSON.stringify(credentials), function (err) {
             if (err) {
                 console.log(err);
             }
         });
+    }
+    async subscribe() {
+        const query = {
+            queryName: 'subscriptionsMutation',
+            variables: {
+                subscriptions: [
+                    {
+                        subscriptionName: 'messageAdded',
+                        query: 'subscription subscriptions_messageAdded_Subscription(\n  $chatId: BigInt!\n) {\n  messageAdded(chatId: $chatId) {\n    id\n    messageId\n    creationTime\n    state\n    ...ChatMessage_message\n    ...chatHelpers_isBotMessage\n  }\n}\n\nfragment ChatMessageDownvotedButton_message on Message {\n  ...MessageFeedbackReasonModal_message\n  ...MessageFeedbackOtherModal_message\n}\n\nfragment ChatMessageDropdownMenu_message on Message {\n  id\n  messageId\n  vote\n  text\n  ...chatHelpers_isBotMessage\n}\n\nfragment ChatMessageFeedbackButtons_message on Message {\n  id\n  messageId\n  vote\n  voteReason\n  ...ChatMessageDownvotedButton_message\n}\n\nfragment ChatMessageOverflowButton_message on Message {\n  text\n  ...ChatMessageDropdownMenu_message\n  ...chatHelpers_isBotMessage\n}\n\nfragment ChatMessageSuggestedReplies_SuggestedReplyButton_message on Message {\n  messageId\n}\n\nfragment ChatMessageSuggestedReplies_message on Message {\n  suggestedReplies\n  ...ChatMessageSuggestedReplies_SuggestedReplyButton_message\n}\n\nfragment ChatMessage_message on Message {\n  id\n  messageId\n  text\n  author\n  linkifiedText\n  state\n  ...ChatMessageSuggestedReplies_message\n  ...ChatMessageFeedbackButtons_message\n  ...ChatMessageOverflowButton_message\n  ...chatHelpers_isHumanMessage\n  ...chatHelpers_isBotMessage\n  ...chatHelpers_isChatBreak\n  ...chatHelpers_useTimeoutLevel\n  ...MarkdownLinkInner_message\n}\n\nfragment MarkdownLinkInner_message on Message {\n  messageId\n}\n\nfragment MessageFeedbackOtherModal_message on Message {\n  id\n  messageId\n}\n\nfragment MessageFeedbackReasonModal_message on Message {\n  id\n  messageId\n}\n\nfragment chatHelpers_isBotMessage on Message {\n  ...chatHelpers_isHumanMessage\n  ...chatHelpers_isChatBreak\n}\n\nfragment chatHelpers_isChatBreak on Message {\n  author\n}\n\nfragment chatHelpers_isHumanMessage on Message {\n  author\n}\n\nfragment chatHelpers_useTimeoutLevel on Message {\n  id\n  state\n  text\n  messageId\n}\n'
+                    },
+                    {
+                        subscriptionName: 'viewerStateUpdated',
+                        query: 'subscription subscriptions_viewerStateUpdated_Subscription {\n  viewerStateUpdated {\n    id\n    ...ChatPageBotSwitcher_viewer\n  }\n}\n\nfragment BotHeader_bot on Bot {\n  displayName\n  ...BotImage_bot\n}\n\nfragment BotImage_bot on Bot {\n  profilePicture\n  displayName\n}\n\nfragment BotLink_bot on Bot {\n  displayName\n}\n\nfragment ChatPageBotSwitcher_viewer on Viewer {\n  availableBots {\n    id\n    ...BotLink_bot\n    ...BotHeader_bot\n  }\n}\n'
+                    }
+                ]
+            },
+            query: 'mutation subscriptionsMutation(\n  $subscriptions: [AutoSubscriptionQuery!]!\n) {\n  autoSubscribe(subscriptions: $subscriptions) {\n    viewer {\n      id\n    }\n  }\n}\n'
+        };
+        await this.makeRequest(query);
     }
     async start() {
         const isFormkeyAvailable = await this.getCredentials();
@@ -92,8 +108,12 @@ class ChatBot {
                 process.exit(0);
             }
             await this.setCredentials();
+            await this.subscribe();
             await this.login(mode);
         }
+        await getUpdatedSettings(channelName, pbCookie);
+        await this.subscribe();
+        const ws = await connectWs();
         const { bot } = await prompts({
             type: "select",
             name: "bot",
@@ -111,6 +131,7 @@ class ChatBot {
             "\n!exit - exit the chat" +
             "\n!clear - clear chat history" +
             "\n!submit - submit prompt";
+        await this.clearContext();
         console.log(helpMsg);
         let submitedPrompt = "";
         while (true) {
@@ -124,7 +145,8 @@ class ChatBot {
                     console.log(helpMsg);
                 }
                 else if (prompt === "!exit") {
-                    break;
+                    await disconnectWs(ws);
+                    process.exit(0);
                 }
                 else if (prompt === "!clear") {
                     spinner.start("Clearing chat history...");
@@ -138,12 +160,11 @@ class ChatBot {
                         console.log("No prompt to submit");
                         continue;
                     }
-                    spinner.start("Waiting for response...");
                     await this.sendMsg(submitedPrompt);
-                    let response = await this.getResponse();
-                    spinner.stop();
+                    process.stdout.write("Response: ");
+                    await listenWs(ws);
+                    console.log('\n');
                     submitedPrompt = "";
-                    console.log(response);
                 }
                 else {
                     submitedPrompt += prompt + "\n";
@@ -163,8 +184,6 @@ class ChatBot {
     async login(mode) {
         if (mode === "auto") {
             const { email, sid_token } = await mail.createNewEmail();
-            console.log("EMAIL: " + email);
-            console.log("SID_TOKEN: " + sid_token);
             const status = await this.sendVerifCode(null, email);
             spinner.start("Waiting for OTP code...");
             const otp_code = await mail.getPoeOTPCode(sid_token);
@@ -332,6 +351,7 @@ class ChatBot {
             throw new Error("Could not send message");
         }
     }
+    // Responce without stream
     async getResponse() {
         let text;
         let state;
