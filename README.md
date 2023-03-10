@@ -3,6 +3,7 @@ This is a CLI tool to call the Quora Poe API through GraphQL. It is a work in pr
 - Auto login using temporary email, so you don't need to use your own email/phone number.
 - Semi auto login using your own email/phone number, you need to enter the OTP manually.
 - Chat with 4 types of bots (Sage, Claude, ChatGPT, and Dragonfly).
+- Stream responses support from the bot.
 - Clear the chat history.
 
 ## Requirements
@@ -26,8 +27,10 @@ npm start
 ```
 
 ## TODO List
-- [ ] Add support for relogin after session expires
-- [ ] Add stream support
+- [ ] Make it modular, so it can be used as a library
+- [ ] Add support for re-login after session expires
+- [ ] Add support for get chat history
+- [ ] Add support for delete message
 
 ## Contributing
 
