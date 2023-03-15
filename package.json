@@ -2,15 +2,20 @@
   "name": "poe-node",
   "version": "1.4.0",
   "description": "A CLI tool to call the Quora Poe API through GraphQL",
-  "main": "index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "compile": "tsc",
     "dev": "npm run compile && node ./dist/index.js",
-    "start": "node ./dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node ./dist/index.js"
   },
-  "keywords": [],
+  "keywords": [
+    "poe",
+    "quora",
+    "quora poe",
+    "quora poe api",
+    "quora poe graphql"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
