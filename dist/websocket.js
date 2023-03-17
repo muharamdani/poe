@@ -2,7 +2,8 @@ import WebSocket from 'ws';
 import * as diff from 'diff';
 import { readFileSync } from "fs";
 const getSocketUrl = async () => {
-    const socketUrl = 'wss://tch252531.tch.quora.com';
+    const tchRand = Math.floor(100000 + Math.random() * 900000); // They're surely using 6 digit random number for ws url.
+    const socketUrl = `wss://tch${tchRand}.tch.quora.com`;
     const credentials = JSON.parse(readFileSync("config.json", "utf8"));
     const appSettings = credentials.app_settings.tchannelData;
     const boxName = appSettings.boxName;
