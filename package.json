@@ -1,17 +1,30 @@
 {
   "name": "poe-node",
-  "version": "1.4.0",
-  "description": "A CLI tool to call the Quora Poe API through GraphQL",
+  "version": "1.5.0",
+  "description": "Work as CLI or module to call the Quora Poe API through GraphQL",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "compile": "tsc",
     "dev": "npm run compile && node ./dist/index.js",
-    "start": "node ./dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "cli": "node ./dist/cli.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "poe",
+    "quora",
+    "graphql",
+    "api",
+    "cli",
+    "library",
+    "chatbot",
+    "bot",
+    "openai",
+    "gpt3",
+    "gpt-3",
+    "gpt4",
+    "chatgpt"
+  ],
+  "author": "Ramdani",
   "license": "ISC",
   "dependencies": {
     "cross-fetch": "^3.1.5",
@@ -19,6 +32,7 @@
     "dotenv": "^16.0.3",
     "ora": "^6.1.2",
     "prompts": "^2.4.2",
+    "random-useragent": "^0.5.0",
     "ws": "^8.12.1"
   },
   "devDependencies": {

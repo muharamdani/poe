@@ -1,1 +1,27 @@
-{"quora_formkey":"","quora_cookie":""}
+{
+    "stream_response": true,
+    "quora_formkey": "",
+    "quora_cookie": "",
+    "channel_name": "",
+    "app_settings": {
+        "formkey": "",
+        "tchannelData": {
+            "minSeq": "",
+            "channel": "",
+            "channelHash": "",
+            "boxName": "",
+            "baseHost": "",
+            "targetUrl": "",
+            "enableWebsocket": true
+        }
+    },
+    "chat_ids": {
+        "a2": 0,
+        "capybara": 0,
+        "nutria": 0,
+        "chinchilla": 0
+    },
+    "auto_login": true,
+    "email": "",
+    "sid_token": ""
+}

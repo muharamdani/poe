@@ -9,7 +9,7 @@ const createNewEmail = async () => {
     const credentials = JSON.parse(readFileSync("config.json", "utf8"));
     credentials.email = response_json.email_addr;
     credentials.sid_token = response_json.sid_token;
-    writeFile("config.json", JSON.stringify(credentials), function(err) {
+    writeFile("config.json", JSON.stringify(credentials, null, 4), function (err) {
         if (err) {
             console.log(err);
         }
@@ -34,7 +34,7 @@ const getLatestEmail = async (sid_token) => {
     let emailList = await getEmailList(sid_token);
     let emailListLength = emailList.list.length;
     while (true) {
-        await new Promise(r => setTimeout(r, 10000));
+        await new Promise(r => setTimeout(r, 15000));
         emailList = await getEmailList(sid_token);
         emailListLength = emailList.list.length;
         if (emailListLength > 1) {

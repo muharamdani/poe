@@ -28,7 +28,7 @@ const getUpdatedSettings = async (channelName, pbCookie) => {
         { tchannelData: { minSeq: minSeq } } = appSettings;
     const credentials = JSON.parse(readFileSync("config.json", "utf8"));
     credentials.app_settings.tchannelData.minSeq = minSeq
-    writeFile("config.json", JSON.stringify(credentials), function (err) {
+    writeFile("config.json", JSON.stringify(credentials, null, 4), function (err) {
         if (err) {
             console.log(err);
         }
