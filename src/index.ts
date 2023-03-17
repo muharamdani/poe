@@ -3,9 +3,10 @@ import prompts from "prompts";
 import ora from "ora";
 import * as dotenv from "dotenv";
 import {readFileSync, writeFile} from "fs";
-import {scrape, getUpdatedSettings} from "./credential.js";
-import {listenWs, connectWs, disconnectWs} from "./websocket.js";
+import {getUpdatedSettings, scrape} from "./credential.js";
+import {connectWs, disconnectWs, listenWs} from "./websocket.js";
 import * as mail from "./mail.js";
+import randomUseragent from 'random-useragent'
 
 dotenv.config();
 
@@ -25,63 +26,83 @@ const queries = {
     sendVerificationCodeMutation: readFileSync(gqlDir + "/SendVerificationCodeForLoginMutation.graphql", "utf8"),
 };
 
-let [pbCookie, channelName, appSettings, formkey] = ["", "", "", ""];
-
 class ChatBot {
+    public config = JSON.parse(readFileSync("config.json", "utf8"));
+
     private headers = {
         'Content-Type': 'application/json',
-        'Accept': '*/*',
         'Host': 'poe.com',
-        'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
         'Origin': 'https://poe.com',
+        'User-Agent': randomUseragent.getRandom(),
     }
 
-    private chatId: number = 0;
-    private bot: string = "";
+    public chatId: number = 0;
+    public bot: string = "";
 
-    private async getCredentials() {
-        const credentials = JSON.parse(readFileSync("config.json", "utf8"));
-        const {quora_formkey, quora_cookie} = credentials;
+    public reConnectWs = false;
+
+    public async getCredentials() {
+        const {quora_formkey, channel_name, quora_cookie} = this.config;
         if (quora_formkey.length > 0 && quora_cookie.length > 0) {
-            formkey = quora_formkey;
-            pbCookie = quora_cookie;
-            // For websocket later feature
-            channelName = credentials.channel_name;
-            appSettings = credentials.app_settings;
-            this.headers["poe-formkey"] = formkey;
-            this.headers["poe-tchannel"] = channelName;
-            this.headers["Cookie"] = pbCookie;
+            this.headers["poe-formkey"] = quora_formkey;
+            this.headers["poe-tchannel"] = channel_name;
+            this.headers["Cookie"] = quora_cookie;
         }
         return quora_formkey.length > 0 && quora_cookie.length > 0;
     }
 
-    private async setCredentials() {
-        let result = await scrape();
-        const credentials = JSON.parse(readFileSync("config.json", "utf8"));
-        credentials.quora_formkey = result.appSettings.formkey;
-        credentials.quora_cookie = result.pbCookie;
-        // For websocket later feature
-        credentials.channel_name = result.channelName;
-        credentials.app_settings = result.appSettings;
+    public async setChatIds() {
+        const [a2, capybara, nutria, chinchilla] = await Promise.all([
+            this.getChatId("a2"),
+            this.getChatId("capybara"),
+            this.getChatId("nutria"),
+            this.getChatId("chinchilla"),
+        ]);
 
-        // set value
-        formkey = result.appSettings.formkey;
-        pbCookie = result.pbCookie;
-        // For websocket later feature
-        channelName = result.channelName;
-        appSettings = result.appSettings;
-        this.headers["poe-formkey"] = formkey;
-        this.headers["poe-tchannel"] = channelName;
-        this.headers["Cookie"] = pbCookie;
-        writeFile("config.json", JSON.stringify(credentials), function (err) {
+        const credentials = JSON.parse(readFileSync("config.json", "utf8"));
+
+        credentials.chat_ids = {
+            a2,
+            capybara,
+            nutria,
+            chinchilla,
+        };
+
+        this.config.chat_ids = {
+            a2,
+            capybara,
+            nutria,
+            chinchilla,
+        }
+
+        writeFile("config.json", JSON.stringify(credentials, null, 4), function (err) {
             if (err) {
                 console.log(err);
             }
         });
     }
 
-    private async subscribe() {
+    public async setCredentials() {
+        let result = await scrape();
+        this.config.quora_formkey = result.appSettings.formkey;
+        this.config.quora_cookie = result.pbCookie;
+        this.config.channel_name = result.channelName;
+        this.config.app_settings = result.appSettings;
+
+        // set value
+        this.headers["poe-formkey"] = this.config.quora_formkey;
+        this.headers["poe-tchannel"] = this.config.channel_name;
+        this.headers["Cookie"] = this.config.quora_cookie;
+
+        writeFile("config.json", JSON.stringify(this.config, null, 4), function (err) {
+            if (err) {
+                console.log(err);
+            }
+        });
+    }
+
+    public async subscribe() {
         const query = {
             queryName: 'subscriptionsMutation',
             variables: {
@@ -102,94 +123,7 @@ class ChatBot {
         await this.makeRequest(query);
     }
 
-    public async start() {
-        const isFormkeyAvailable = await this.getCredentials();
-        if (!isFormkeyAvailable) {
-            const {mode} = await prompts({
-                type: "select",
-                name: "mode",
-                message: "Select",
-                choices: [
-                    {title: "Auto [This will use temp email to get Verification Code]", value: "auto"},
-                    {title: "Semi-Auto [Use you own email/phone number]", value: "semi"},
-                    {title: "exit", value: "exit"}
-                ],
-            });
-
-            if (mode === "exit") {
-                process.exit(0);
-            }
-
-            await this.setCredentials();
-            await this.subscribe();
-            await this.login(mode);
-        }
-
-        await getUpdatedSettings(channelName, pbCookie);
-        await this.subscribe();
-        const ws = await connectWs();
-        const {bot} = await prompts({
-            type: "select",
-            name: "bot",
-            message: "Select",
-            choices: [
-                {title: "Claude (Powered by Anthropic)", value: "a2"},
-                {title: "Sage (Powered by OpenAI - logical)", value: "capybara"},
-                {title: "Dragonfly (Powered by OpenAI - simpler)", value: "nutria"},
-                {title: "ChatGPT (Powered by OpenAI - current)", value: "chinchilla"},
-            ],
-        });
-
-        await this.getChatId(bot);
-
-        let helpMsg = "Available commands: !help !exit, !clear, !submit" +
-            "\n!help - show this message" +
-            "\n!exit - exit the chat" +
-            "\n!clear - clear chat history" +
-            "\n!submit - submit prompt";
-
-        await this.clearContext();
-        console.log(helpMsg)
-        let submitedPrompt = "";
-        while (true) {
-            const {prompt} = await prompts({
-                type: "text",
-                name: "prompt",
-                message: "Ask:",
-            });
-
-            if (prompt.length > 0) {
-                if (prompt === "!help") {
-                    console.log(helpMsg);
-                } else if (prompt === "!exit") {
-                    await disconnectWs(ws);
-                    process.exit(0);
-                } else if (prompt === "!clear") {
-                    spinner.start("Clearing chat history...");
-                    await this.clearContext();
-                    submitedPrompt = "";
-                    spinner.stop();
-                    console.log("Chat history cleared");
-                } else if (prompt === "!submit") {
-                    if (submitedPrompt.length === 0) {
-                        console.log("No prompt to submit");
-                        continue;
-                    }
-                    await this.sendMsg(submitedPrompt);
-                    process.stdout.write("Response: ");
-                    await listenWs(ws);
-                    console.log('\n');
-                    submitedPrompt = "";
-                } else {
-                    submitedPrompt += prompt + "\n";
-                }
-            }
-        }
-    }
-
-    private async makeRequest(request) {
-        this.headers["Content-Length"] = Buffer.byteLength(JSON.stringify(request), 'utf8');
-
+    public async makeRequest(request) {
         const response = await fetch('https://poe.com/api/gql_POST', {
             method: 'POST',
             headers: this.headers,
@@ -264,9 +198,11 @@ class ChatBot {
             }
             spinner.stop();
         }
+
+        await this.setChatIds();
     }
 
-    private async signInOrUp(phoneNumber, email, verifyCode) {
+    public async signInOrUp(phoneNumber, email, verifyCode) {
         console.log("Signing in/up...")
         console.log("Phone number: " + phoneNumber)
         console.log("Email: " + email)
@@ -291,7 +227,7 @@ class ChatBot {
         }
     }
 
-    private async signUpWithVerificationCode(phoneNumber, email, verifyCode) {
+    public async signUpWithVerificationCode(phoneNumber, email, verifyCode) {
         console.log("Signing in/up...")
         console.log("Phone number: " + phoneNumber)
         console.log("Email: " + email)
@@ -316,7 +252,7 @@ class ChatBot {
         }
     }
 
-    private async sendVerifCode(phoneNumber, email) {
+    public async sendVerifCode(phoneNumber, email) {
         try {
             // status error case: success, user_with_confirmed_phone_number_not_found, user_with_confirmed_email_not_found
             const {data: {sendVerificationCode: {status}}} = await this.makeRequest({
@@ -329,11 +265,22 @@ class ChatBot {
             console.log("Verification code sent. Status: " + status)
             return status;
         } catch (e) {
-            throw e;
+            console.log("Error sending verification code, please try again " + e)
+            await this.resetConfig();
         }
     }
 
-    private async getChatId(bot: string) {
+    public async resetConfig() {
+        const defaultConfig = JSON.parse(readFileSync("config.example.json", "utf8"));
+        console.log("Resetting config...")
+        writeFile("config.json", JSON.stringify(defaultConfig, null, 4), function (err) {
+            if (err) {
+                console.log(err);
+            }
+        });
+    }
+
+    public async getChatId(bot: string) {
         try {
             const {data: {chatOfBot: {chatId}}} = await this.makeRequest({
                 query: `${queries.chatViewQuery}`,
@@ -343,67 +290,241 @@ class ChatBot {
             });
             this.chatId = chatId;
             this.bot = bot;
+            return chatId;
         } catch (e) {
+            console.log(e)
+            await this.resetConfig();
             throw new Error("Could not get chat id, invalid formkey or cookie! Please remove the quora_formkey value from the config.json file and try again.");
         }
     }
 
-    private async clearContext() {
+    public async clearContext(bot: string) {
         try {
-            await this.makeRequest({
+            const data = await this.makeRequest({
                 query: `${queries.addMessageBreakMutation}`,
-                variables: {chatId: this.chatId},
+                variables: {chatId: this.config.chat_ids[bot]},
             });
+
+            if (!data.data) {
+                this.reConnectWs = true; // for websocket purpose
+                console.log("ON TRY! Could not clear context! Trying to reLogin..");
+                await this.reLogin();
+                await this.clearContext(bot);
+            }
+            return data
         } catch (e) {
-            throw new Error("Could not clear context");
+            this.reConnectWs = true; // for websocket purpose
+            console.log("ON CATCH! Could not clear context! Trying to reLogin..");
+            await this.reLogin();
+            await this.clearContext(bot);
+            return e
         }
     }
 
-    private async sendMsg(query: string) {
+    public async sendMsg(bot: string, query: string) {
         try {
-            await this.makeRequest({
+            const data = await this.makeRequest({
                 query: `${queries.addHumanMessageMutation}`,
                 variables: {
-                    bot: this.bot,
-                    chatId: this.chatId,
+                    bot: bot,
+                    chatId: this.config.chat_ids[bot],
                     query: query,
                     source: null,
                     withChatBreak: false
                 },
             });
+
+            if (!data.data) {
+                this.reConnectWs = true; // for cli websocket purpose
+                console.log("Could not send message! Trying to reLogin..");
+                await this.reLogin();
+                await this.sendMsg(bot, query);
+            }
+            return data
         } catch (e) {
-            throw new Error("Could not send message");
+            this.reConnectWs = true; // for cli websocket purpose
+            console.log("ON CATCH! Could not send message! Trying to reLogin..");
+            await this.reLogin();
+            await this.sendMsg(bot, query);
+            return e
         }
     }
 
-    // Responce without stream
-    private async getResponse(): Promise<string> {
+    public async getResponse(bot: string): Promise<any> {
         let text: string
         let state: string
         let authorNickname: string
-        while (true) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            let response = await this.makeRequest({
-                query: `${queries.chatPaginationQuery}`,
-                variables: {
-                    before: null,
-                    bot: this.bot,
-                    last: 1,
-                },
-            });
-            let base = response.data.chatOfBot.messagesConnection.edges
-            let lastEdgeIndex = base.length - 1;
-            text = base[lastEdgeIndex].node.text;
-            authorNickname = base[lastEdgeIndex].node.authorNickname;
-            state = base[lastEdgeIndex].node.state;
+        try {
+            while (true) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                let response = await this.makeRequest({
+                    query: `${queries.chatPaginationQuery}`,
+                    variables: {
+                        before: null,
+                        bot: bot,
+                        last: 1,
+                    },
+                });
+                let base = response.data.chatOfBot.messagesConnection.edges
+                let lastEdgeIndex = base.length - 1;
+                text = base[lastEdgeIndex].node.text;
+                authorNickname = base[lastEdgeIndex].node.authorNickname;
+                state = base[lastEdgeIndex].node.state;
+                if (state === "complete" && authorNickname === bot) {
+                    break;
+                }
+            }
+        } catch (e) {
+            console.log("Could not get response!");
+            return {
+                status: false,
+                message: "failed",
+                data: null,
+            };
+        }
 
-            if (state === "complete" && authorNickname === this.bot) {
-                break;
+        return {
+            status: true,
+            message: "success",
+            data: text,
+        };
+    }
+
+    public async reLogin() {
+        await this.setCredentials();
+        if (!this.config.email || !this.config.sid_token) {
+            console.log("No email or sid_token found, creating new email and sid_token..")
+            const {email, sid_token} = await mail.createNewEmail()
+            this.config.email = email;
+            this.config.sid_token = sid_token;
+        }
+        const status = await this.sendVerifCode(null, this.config.email);
+        spinner.start("Waiting for OTP code...");
+        const otp_code = await mail.getPoeOTPCode(this.config.sid_token);
+        spinner.stop();
+        if (status === 'user_with_confirmed_email_not_found') {
+            await this.signUpWithVerificationCode(null, this.config.email, otp_code)
+        } else {
+            await this.signInOrUp(null, this.config.email, otp_code)
+        }
+        const newConfig = JSON.parse(readFileSync("config.json", "utf8"));
+        this.config = newConfig;
+        this.headers["poe-formkey"] = newConfig.quora_formkey;
+        this.headers["poe-tchannel"] = newConfig.channel_name;
+        this.headers["Cookie"] = newConfig.quora_cookie;
+        await this.setChatIds();
+    }
+
+    public async startCli() {
+        const isFormkeyAvailable = await this.getCredentials();
+        if (!isFormkeyAvailable) {
+            const {mode} = await prompts({
+                type: "select",
+                name: "mode",
+                message: "Select",
+                choices: [
+                    {title: "Auto [This will use temp email to get Verification Code]", value: "auto"},
+                    {title: "Semi-Auto [Use you own email/phone number]", value: "semi"},
+                    {title: "exit", value: "exit"}
+                ],
+            });
+
+            if (mode === "exit") {
+                process.exit(0);
+            }
+
+            await this.setCredentials();
+            await this.subscribe();
+            await this.login(mode);
+        }
+
+        let ws :any;
+        if (this.config.stream_response) {
+            await getUpdatedSettings(this.config.channel_name, this.config.quora_cookie);
+            await this.subscribe();
+            ws = await connectWs();
+        }
+        const {bot} = await prompts({
+            type: "select",
+            name: "bot",
+            message: "Select",
+            choices: [
+                {title: "Claude (Powered by Anthropic)", value: "a2"},
+                {title: "Sage (Powered by OpenAI - logical)", value: "capybara"},
+                {title: "Dragonfly (Powered by OpenAI - simpler)", value: "nutria"},
+                {title: "ChatGPT (Powered by OpenAI - current)", value: "chinchilla"},
+            ],
+        });
+
+        this.chatId = this.config.chat_ids[bot];
+        this.bot = bot;
+
+        let helpMsg = "Available commands: !help !exit, !clear, !submit" +
+            "\n!help - show this message" +
+            "\n!exit - exit the chat" +
+            "\n!clear - clear chat history" +
+            "\n!submit - submit prompt";
+
+        // await this.clearContext(this.chatId);
+        console.log(helpMsg)
+        let submitedPrompt = "";
+        while (true) {
+            const {prompt} = await prompts({
+                type: "text",
+                name: "prompt",
+                message: "Ask:",
+            });
+
+            if (prompt.length > 0) {
+                if (prompt === "!help") {
+                    console.log(helpMsg);
+                } else if (prompt === "!exit") {
+                    process.exit(0);
+                } else if (prompt === "!clear") {
+                    spinner.start("Clearing chat history...");
+                    await this.clearContext(bot);
+                    if (this.config.stream_response) {
+                        if (this.reConnectWs) {
+                            await disconnectWs(ws);
+                            await getUpdatedSettings(this.config.channel_name, this.config.quora_cookie)
+                            await this.subscribe();
+                            ws = await connectWs();
+                            this.reConnectWs = false;
+                        }
+                    }
+                    submitedPrompt = "";
+                    spinner.stop();
+                    console.log("Chat history cleared");
+                } else if (prompt === "!submit") {
+                    if (submitedPrompt.length === 0) {
+                        console.log("No prompt to submit");
+                        continue;
+                    }
+                    await this.sendMsg(this.bot, submitedPrompt);
+                    if (this.config.stream_response) {
+                        if (this.reConnectWs) {
+                            await disconnectWs(ws);
+                            await getUpdatedSettings(this.config.channel_name, this.config.quora_cookie)
+                            await this.subscribe();
+                            ws = await connectWs();
+                            this.reConnectWs = false;
+                        }
+                        process.stdout.write("Response: ");
+                        await listenWs(ws);
+                        console.log('\n');
+                    } else {
+                        spinner.start("Waiting for response...");
+                        let response = await this.getResponse(this.bot);
+                        spinner.stop();
+                        console.log(response.data);
+                    }
+                    submitedPrompt = "";
+                } else {
+                    submitedPrompt += prompt + "\n";
+                }
             }
         }
-        return text;
     }
 }
 
-const chatBot = new ChatBot();
-await chatBot.start();
+export default ChatBot;
