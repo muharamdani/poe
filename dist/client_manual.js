@@ -25,7 +25,7 @@ const ai = "a2"; // bot list are in config.example.json, key "chat_ids"
 await bot.clearContext(ai);
 // If you want to get the response (with stream), you can use this
 // NOTE that you need to call this before you send the message
-// await getUpdatedSettings(config.channel_name, config.quora_cookie);
+// await getUpdatedSettings(bot.config.channel_name, bot.config.quora_cookie);
 // await bot.subscribe();
 // const ws = await connectWs();
 // If you want to send a message, you can use this

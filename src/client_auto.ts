@@ -20,7 +20,7 @@ await bot.clearContext(ai);
 
 // If you want to get the response (with stream), you can use this
 // NOTE that you need to call this before you send the message
-// await getUpdatedSettings(config.channel_name, config.quora_cookie);
+// await getUpdatedSettings(bot.config.channel_name, bot.config.quora_cookie);
 // await bot.subscribe();
 // const ws = await connectWs();
 
