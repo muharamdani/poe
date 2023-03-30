@@ -45,16 +45,23 @@ const getLatestEmail = async (sid_token) => {
     return emailList.list[0];
 }
 
+const getEmailContent = async (sid_token, id) => {
+    const response = await fetch(`${BASEURL}?f=fetch_email&email_id=${id}&sid_token=${sid_token}`)
+    const content = await response.json();
+    return (/\b(?<!#)\d{6}\b/g.exec(content.mail_body))?.[0]
+}
+
 const getPoeOTPCode = async (sid_token) => {
     const emailData = await getLatestEmail(sid_token)
-    // Example email subject: "Your verification code 123456"
-    console.log("OTP CODE: " + emailData.mail_subject.split(' ')[3]);
-    return emailData.mail_subject.split(' ')[3];
+    return (
+        await getEmailContent(sid_token, emailData.mail_id)
+    )
 }
 
 export {
     createNewEmail,
     getEmailList,
     getLatestEmail,
+    getEmailContent,
     getPoeOTPCode
 }
