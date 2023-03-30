@@ -1,3 +1,6 @@
+# UPDATE:
+30 March 2023: Quora Poe has updated their mail filter, so the auto login feature by Guerrilla Mail as temporary email service is not working anymore. I will try to find another temporary email service to replace it.
+
 # Quora Poe
 This is a tool to call the Quora Poe API through GraphQL. It is a work in progress, and currently supports the following:
 - Auto login using temporary email, so you don't need to use your own email/phone number.
