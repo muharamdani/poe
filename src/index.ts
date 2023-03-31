@@ -352,7 +352,6 @@ class ChatBot {
 
     public async getHistory(bot: string): Promise<any> {
           try {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
             let response = await this.makeRequest({
                 query: `${queries.chatPaginationQuery}`,
                 variables: {
