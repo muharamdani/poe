@@ -335,7 +335,7 @@ class ChatBot {
             }
         }
         catch (e) {
-            console.log(e);
+            console.log("There has been an error while fetching your history!");
         }
     }
     async getResponse(bot) {
@@ -444,7 +444,7 @@ class ChatBot {
         let helpMsg = "Available commands: !help !exit, !clear, !submit" +
             "\n!help - show this message" +
             "\n!exit - exit the chat" +
-            "\n!history- get the last 25 messages" +
+            "\n!history - get the last 25 messages" +
             "\n!clear - clear chat history" +
             "\n!submit - submit prompt";
         // await this.clearContext(this.chatId);
