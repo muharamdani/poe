@@ -350,6 +350,28 @@ class ChatBot {
         }
     }
 
+    public async getHistory(bot: string): Promise<any> {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        let response = await this.makeRequest({
+            query: `${queries.chatPaginationQuery}`,
+            variables: {
+                before: null,
+                bot: bot,
+                last: 25,
+            },
+        });
+        for(const {node: { messageId, text, authorNickname } } of response.data.chatOfBot.messagesConnection.edges) {
+          console.log(
+            `${authorNickname === 'human' ? '\x1b[37m%s\x1b[0m' : '\x1b[32m%s\x1b[0m'}`,
+            `${authorNickname === 'human' ? 'You' : 'Bot'}: ${text}\n`
+          )
+        }
+      } catch(e) {
+        console.log(e)
+      }
+    }
+
     public async getResponse(bot: string): Promise<any> {
         let text: string
         let state: string
@@ -462,6 +484,7 @@ class ChatBot {
         let helpMsg = "Available commands: !help !exit, !clear, !submit" +
             "\n!help - show this message" +
             "\n!exit - exit the chat" +
+            "\n!history- get the last 25 messages" +
             "\n!clear - clear chat history" +
             "\n!submit - submit prompt";
 
@@ -519,6 +542,10 @@ class ChatBot {
                         console.log(response.data);
                     }
                     submitedPrompt = "";
+                } else if(prompt === "!history") {
+                  spinner.start("Loading history...")
+                  await this.getHistory(this.bot)
+                  spinner.stop()
                 } else {
                     submitedPrompt += prompt + "\n";
                 }
