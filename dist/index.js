@@ -2,7 +2,7 @@ import fetch from "cross-fetch";
 import prompts from "prompts";
 import ora from "ora";
 import * as dotenv from "dotenv";
-import { readFileSync, writeFile } from "fs";
+import { readFileSync, writeFile, existsSync, statSync } from "fs";
 import { getUpdatedSettings, scrape } from "./credential.js";
 import { connectWs, disconnectWs, listenWs } from "./websocket.js";
 import * as mail from "./mail.js";
@@ -444,6 +444,7 @@ class ChatBot {
             "\n!help - show this message" +
             "\n!exit - exit the chat" +
             "\n!history - get the last 25 messages" +
+            "\n!file - load text from a file" +
             "\n!clear - clear chat history" +
             "\n!submit - submit prompt";
         // await this.clearContext(this.chatId);
@@ -508,6 +509,23 @@ class ChatBot {
                     spinner.start("Loading history...");
                     await this.getHistory(this.bot);
                     spinner.stop();
+                }
+                else if (prompt === "!file") {
+                    const { path } = await prompts({
+                        type: "text",
+                        name: "path",
+                        message: "Full path",
+                        initial: "/home/user/folder/file",
+                        validate: (fp) => {
+                            if (existsSync(fp)) {
+                                const stats = statSync(fp);
+                                if (stats.isFile())
+                                    return stats.size < 15e3 ?? "The maximum allowed size is 15kb";
+                            }
+                            return `${fp} is not a valid file path`;
+                        }
+                    });
+                    submitedPrompt += readFileSync(path);
                 }
                 else {
                     submitedPrompt += prompt + "\n";
