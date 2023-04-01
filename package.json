@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "compile": "tsc",
-    "dev": "npm run compile && node ./dist/index.js",
+    "dev": "npm run compile && node ./dist/cli.js",
     "cli": "node ./dist/cli.js"
   },
   "keywords": [
