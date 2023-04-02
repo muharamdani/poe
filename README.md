@@ -10,6 +10,10 @@ This is a tool to call the Quora Poe API through GraphQL. It is a work in progre
 - Clear the chat history.
 - Auto re-login after session expires (only for auto login).
 - Module support, now you can use this tool as a module.
+- Chat history 
+- Prompt from file
+- Delete messages 
+
 
 # Demo's
 ## CLI
@@ -58,8 +62,7 @@ npm run cli
 If you don't want stream responses, you can change the `stream_response` variable in the `config.json` file to `false`.
 
 ## TODO List
-- [ ] Add support for get chat history
-- [ ] Add support for delete message
+- [ ] Find another temp mail service for login automation 
 
 ## Notes
 - Since I have to work on this project in my free time, I can't guarantee that I will be able to update this project frequently.
