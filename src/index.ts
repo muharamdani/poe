@@ -2,7 +2,7 @@ import fetch from "cross-fetch";
 import prompts from "prompts";
 import ora from "ora";
 import * as dotenv from "dotenv";
-import {readFileSync, writeFile} from "fs";
+import {readFileSync, writeFile, existsSync, statSync} from "fs";
 import {getUpdatedSettings, scrape} from "./credential.js";
 import {connectWs, disconnectWs, listenWs} from "./websocket.js";
 import * as mail from "./mail.js";
@@ -361,15 +361,26 @@ class ChatBot {
                 },
             });
 
-            for(const {node: { messageId, text, authorNickname } } of response.data.chatOfBot.messagesConnection.edges) {
-              console.log(
-                `${authorNickname === 'human' ? '\x1b[37m%s\x1b[0m' : '\x1b[32m%s\x1b[0m'}`,
-                `${authorNickname === 'human' ? 'You' : 'Bot'}: ${text}\n`
-              )
-            }
+            return response.data.chatOfBot.messagesConnection.edges
+              .map((({node: {messageId, text, authorNickname}}) => ({
+                messageId,
+                text,
+                authorNickname
+              })))
+
         } catch(e) {
             console.log("There has been an error while fetching your history!")
         }
+    }
+
+    public async deleteMessages(msgIds: number[]) {
+      await this.makeRequest({
+        queryName: 'MessageDeleteConfirmationModal_deleteMessageMutation_Mutation',
+        variables: {
+          messageIds: msgIds
+        },
+        query: `mutation MessageDeleteConfirmationModal_deleteMessageMutation_Mutation(\n  $messageIds: [BigInt!]!\n){\n  messagesDelete(messageIds: $messageIds) {\n    edgeIds\n  }\n}\n`
+      })
     }
 
     public async getResponse(bot: string): Promise<any> {
@@ -485,6 +496,8 @@ class ChatBot {
             "\n!help - show this message" +
             "\n!exit - exit the chat" +
             "\n!history - get the last 25 messages" +
+            "\n!delete - delete messages" +
+            "\n!file - load text from a file" +
             "\n!clear - clear chat history" +
             "\n!submit - submit prompt";
 
@@ -544,8 +557,49 @@ class ChatBot {
                     submitedPrompt = "";
                 } else if(prompt === "!history") {
                     spinner.start("Loading history...")
-                    await this.getHistory(this.bot)
+                    const msgs = await this.getHistory(this.bot)
                     spinner.stop()
+                    for(const { messageId, text, authorNickname } of msgs) {
+                        console.log(
+                          `${authorNickname === 'human' ? '\x1b[37m%s\x1b[0m' : '\x1b[32m%s\x1b[0m'}`,
+                          `${authorNickname === 'human' ? 'You' : 'Bot'}: ${text}\n`
+                        )
+                    }
+                } else if(prompt === "!file") {
+                    const { path } = await prompts({
+                        type: "text",
+                        name: "path",
+                        message: "Full path",
+                        initial: "/home/user/folder/file",
+                        validate: (fp: string) => {
+                            if(existsSync(fp)) {
+                                const stats = statSync(fp)
+                                if(stats.isFile())
+                                    return (stats.size < 15e3) ? true : "The maximum allowed size is 15kb"
+                            }
+                            return `${fp} is not a valid file path`
+                        }
+                    })
+                    submitedPrompt += readFileSync(path)
+                } else if(prompt === "!delete") {
+                    spinner.start("Loading history...")
+                    const msgs = await this.getHistory(this.bot)
+                    spinner.stop()
+
+                    const { messageIds } = await prompts({
+                        type: "multiselect",
+                        name: "messageIds",
+                        message: "Delete",
+                        choices: msgs.map(msg => ({
+                            title: `${(msg.authorNickname === 'human') ? 'You': 'Bot'}: ${msg.text.slice(0, 30)}...`,
+                            value: msg.messageId
+                        }))
+                    })
+
+                    spinner.start("Deleting messages")
+                    await this.deleteMessages(messageIds)
+                    spinner.stop()
+
                 } else {
                     submitedPrompt += prompt + "\n";
                 }
