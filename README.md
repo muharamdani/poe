@@ -80,4 +80,4 @@ Don't sue me.
 Also, please don't use auto login feature to spam the bot, like creating a lot of accounts for any purpose. I don't want this temporary email service to be banned.
 
 ## License
-[MIT](https://choosealicense.com/licenses/mit/)
+[Apache 2.0](https://choosealicense.com/licenses/apache-2.0/)
